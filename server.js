@@ -1,11 +1,17 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Google OAuth 配置
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'your-google-client-id.apps.googleusercontent.com';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'your-google-client-secret';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'https://indie-game-hub-2024.uc.r.appspot.com/auth/google/callback';
 
 // In-memory data storage
 let tasks = [
@@ -270,6 +276,51 @@ app.delete('/api/assets/:id', (req, res) => {
     res.json({ message: 'Asset deleted successfully', asset: deletedAsset });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete asset' });
+  }
+});
+
+// ===== GOOGLE OAUTH AUTHENTICATION =====
+
+// Google OAuth callback endpoint
+app.post('/api/auth/google/callback', async (req, res) => {
+  try {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Authorization code is required' });
+    }
+
+    // Exchange authorization code for access token
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      code: code,
+      grant_type: 'authorization_code',
+      redirect_uri: GOOGLE_REDIRECT_URI
+    });
+
+    const { access_token } = tokenResponse.data;
+
+    // Get user information using access token
+    const userResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${access_token}`
+      }
+    });
+
+    const userData = {
+      id: userResponse.data.id,
+      name: userResponse.data.name,
+      email: userResponse.data.email,
+      avatar: userResponse.data.picture,
+      provider: 'google',
+      loginTime: new Date().toISOString()
+    };
+
+    res.json(userData);
+  } catch (error) {
+    console.error('Google OAuth error:', error);
+    res.status(500).json({ error: 'Failed to authenticate with Google' });
   }
 });
 
